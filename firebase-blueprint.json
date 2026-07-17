@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "student": {
+      "title": "Student",
+      "description": "Student record of grades 1-6",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Student full name" },
+        "nisn": { "type": "string", "description": "National Student ID number" },
+        "gender": { "type": "string", "enum": ["Laki-laki", "Perempuan"] },
+        "dob": { "type": "string", "description": "Date of Birth (YYYY-MM-DD)" },
+        "classLevel": { "type": "number", "description": "Class grade level 1 to 6" },
+        "status": { "type": "string", "enum": ["Aktif", "Alumni", "Keluar"] },
+        "address": { "type": "string" },
+        "parentPhone": { "type": "string" }
+      },
+      "required": ["name", "nisn", "gender", "classLevel", "status"]
+    },
+    "attendance": {
+      "title": "Attendance",
+      "description": "Daily attendance record for a student",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "classLevel": { "type": "number" },
+        "status": { "type": "string", "enum": ["Hadir", "Sakit", "Izin", "Alpa"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["studentId", "date", "classLevel", "status"]
+    },
+    "examScore": {
+      "title": "ExamScore",
+      "description": "Exam and quiz scores of a student for specific subjects",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "classLevel": { "type": "number" },
+        "subject": { "type": "string" },
+        "examType": { "type": "string", "enum": ["Harian", "UTS", "UAS"] },
+        "score": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "notes": { "type": "string" }
+      },
+      "required": ["studentId", "classLevel", "subject", "examType", "score", "date"]
+    },
+    "teacher": {
+      "title": "Teacher",
+      "description": "Teacher record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "nip": { "type": "string" },
+        "gender": { "type": "string", "enum": ["Laki-laki", "Perempuan"] },
+        "subject": { "type": "string" },
+        "classLevel": { "type": "number", "description": "Homeroom teacher class level (wali kelas), 0 if none" },
+        "status": { "type": "string", "enum": ["PNS", "PPPK", "Honorer"] },
+        "phone": { "type": "string" }
+      },
+      "required": ["name", "nip", "gender", "status"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "student",
+      "description": "Collection of students"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "attendance",
+      "description": "Daily attendance logs"
+    },
+    "/examScores/{examScoreId}": {
+      "schema": "examScore",
+      "description": "Exam and academic score logs"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "teacher",
+      "description": "Collection of teachers"
+    }
+  }
+}

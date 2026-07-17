@@ -1,0 +1,6 @@
+{
+  "name": "Administrasi Kelas 1-6",
+  "description": "Aplikasi administrasi sekolah untuk mengelola data siswa, absensi, dan nilai ujian terintegrasi otomatis untuk kelas 1-6.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
