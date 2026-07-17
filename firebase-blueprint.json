@@ -12,7 +12,8 @@
         "classLevel": { "type": "number", "description": "Class grade level 1 to 6" },
         "status": { "type": "string", "enum": ["Aktif", "Alumni", "Keluar"] },
         "address": { "type": "string" },
-        "parentPhone": { "type": "string" }
+        "parentPhone": { "type": "string" },
+        "photoUrl": { "type": "string", "description": "URL to student photo stored in Firebase Storage" }
       },
       "required": ["name", "nisn", "gender", "classLevel", "status"]
     },
@@ -59,7 +60,8 @@
         "subject": { "type": "string" },
         "classLevel": { "type": "number", "description": "Homeroom teacher class level (wali kelas), 0 if none" },
         "status": { "type": "string", "enum": ["PNS", "PPPK", "Honorer"] },
-        "phone": { "type": "string" }
+        "phone": { "type": "string" },
+        "photoUrl": { "type": "string", "description": "URL to teacher photo stored in Firebase Storage" }
       },
       "required": ["name", "nip", "gender", "status"]
     }

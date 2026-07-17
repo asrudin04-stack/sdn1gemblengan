@@ -8,6 +8,7 @@ export interface Student {
   status: 'Aktif' | 'Alumni' | 'Keluar';
   address: string;
   parentPhone: string;
+  photoUrl?: string;
 }
 
 export type MonthOption = 
@@ -47,6 +48,7 @@ export interface Teacher {
   classLevel: number; // Wali Kelas level (1-6, or 0 for none)
   status: 'PNS' | 'PPPK' | 'Honorer';
   phone: string;
+  photoUrl?: string;
 }
 
 export const SUBJECT_OPTIONS = [

@@ -14,10 +14,12 @@ import {
   MapPin,
   Calendar,
   Check,
-  Briefcase
+  Briefcase,
+  Camera,
+  UploadCloud
 } from 'lucide-react';
 import { Student } from '../types';
-import { addStudent, updateStudent, deleteStudent } from '../dbService';
+import { addStudent, updateStudent, deleteStudent, uploadStudentPhoto, deleteStudentPhoto } from '../dbService';
 
 interface Props {
   students: Student[];
@@ -48,6 +50,9 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
   const [formStatus, setFormStatus] = useState<'Aktif' | 'Alumni' | 'Keluar'>('Aktif');
   const [formAddress, setFormAddress] = useState('');
   const [formParentPhone, setFormParentPhone] = useState('');
+  const [formPhotoUrl, setFormPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string>('');
 
   const [loading, setLoading] = useState(false);
 
@@ -75,6 +80,9 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
       setFormStatus(student.status);
       setFormAddress(student.address || '');
       setFormParentPhone(student.parentPhone || '');
+      setFormPhotoUrl(student.photoUrl || '');
+      setPhotoPreview(student.photoUrl || '');
+      setPhotoFile(null);
     } else {
       setEditingStudent(null);
       setFormName('');
@@ -85,6 +93,9 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
       setFormStatus('Aktif');
       setFormAddress('');
       setFormParentPhone('');
+      setFormPhotoUrl('');
+      setPhotoPreview('');
+      setPhotoFile(null);
     }
     setIsModalOpen(true);
   };
@@ -99,6 +110,8 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
 
     setLoading(true);
     try {
+      let finalPhotoUrl = formPhotoUrl;
+
       const studentData: Student = {
         name: formName,
         nisn: formNisn,
@@ -107,13 +120,26 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
         classLevel: Number(formClass),
         status: formStatus,
         address: formAddress,
-        parentPhone: formParentPhone
+        parentPhone: formParentPhone,
+        photoUrl: finalPhotoUrl
       };
 
       if (editingStudent && editingStudent.id) {
+        if (photoFile) {
+          // Upload new photo and update URL
+          finalPhotoUrl = await uploadStudentPhoto(editingStudent.id, photoFile);
+          studentData.photoUrl = finalPhotoUrl;
+        }
         await updateStudent(editingStudent.id, studentData);
       } else {
-        await addStudent(studentData);
+        // Create new student record first to obtain document ID
+        const docRef = await addStudent(studentData);
+        if (photoFile && docRef.id) {
+          // Upload photo using the new document ID
+          finalPhotoUrl = await uploadStudentPhoto(docRef.id, photoFile);
+          // Update student with their photo URL
+          await updateStudent(docRef.id, { photoUrl: finalPhotoUrl });
+        }
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -127,8 +153,12 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
   // Delete Handler
   const handleDelete = async (id: string | undefined, name: string) => {
     if (!id) return;
+    const studentToDelete = students.find(s => s.id === id);
     if (confirm(`Apakah Anda yakin ingin menghapus data siswa ${name}?`)) {
       try {
+        if (studentToDelete?.photoUrl) {
+          await deleteStudentPhoto(id, studentToDelete.photoUrl);
+        }
         await deleteStudent(id);
       } catch (err) {
         console.error(err);
@@ -284,9 +314,18 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
                   >
                     <td className="py-4 px-6">
                       <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
-                          {student.name.substring(0, 2).toUpperCase()}
-                        </div>
+                        {student.photoUrl ? (
+                          <img 
+                            src={student.photoUrl} 
+                            alt={student.name}
+                            referrerPolicy="no-referrer"
+                            className="w-9 h-9 rounded-full object-cover border border-gray-100"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
+                            {student.name.substring(0, 2).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <button
                             onClick={() => onViewProfile(student)}
@@ -385,6 +424,57 @@ export default function StudentManagement({ students, onViewProfile }: Props) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Photo Upload */}
+              <div className="flex flex-col items-center justify-center space-y-2 pb-2">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider text-center">
+                  Foto Profil Siswa
+                </label>
+                <div className="relative group">
+                  <div className="w-24 h-24 rounded-full border-2 border-dashed border-gray-350 bg-gray-50 flex flex-col items-center justify-center overflow-hidden relative shadow-xs">
+                    {photoPreview ? (
+                      <img 
+                        src={photoPreview} 
+                        alt="Pratinjau" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="text-center p-2 flex flex-col items-center">
+                        <Camera className="w-6 h-6 text-gray-400" />
+                        <span className="text-[10px] text-gray-400 font-semibold mt-1">Pilih Foto</span>
+                      </div>
+                    )}
+                    <input 
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setPhotoFile(file);
+                          setPhotoPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                    />
+                  </div>
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoFile(null);
+                        setPhotoPreview('');
+                        setFormPhotoUrl('');
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition shadow-md"
+                      title="Hapus foto"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Format JPG, PNG (Maks. 2MB)</p>
+              </div>
+
               {/* Name */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">

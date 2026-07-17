@@ -10,7 +10,8 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from './firebase';
 import { Student, Attendance, ExamScore, Teacher } from './types';
 
 // Collections
@@ -242,5 +243,53 @@ export async function seedDemoDataIfEmpty() {
       await addTeacher(teacher);
     }
     console.log("Demo teachers seeded successfully.");
+  }
+}
+
+// --- Firebase Storage Upload Helpers ---
+
+/**
+ * Uploads a student photo to Firebase Storage and returns the download URL
+ */
+export async function uploadStudentPhoto(studentId: string, file: File): Promise<string> {
+  const fileExtension = file.name.split('.').pop() || 'jpg';
+  const fileRef = ref(storage, `students/${studentId}/photo.${fileExtension}`);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
+}
+
+/**
+ * Deletes a student photo from Firebase Storage if it exists
+ */
+export async function deleteStudentPhoto(studentId: string, photoUrl: string): Promise<void> {
+  try {
+    if (!photoUrl || photoUrl.includes('placeholder') || !photoUrl.includes('firebasestorage')) return;
+    const fileRef = ref(storage, photoUrl);
+    await deleteObject(fileRef);
+  } catch (error) {
+    console.error("Failed to delete student photo:", error);
+  }
+}
+
+/**
+ * Uploads a teacher photo to Firebase Storage and returns the download URL
+ */
+export async function uploadTeacherPhoto(teacherId: string, file: File): Promise<string> {
+  const fileExtension = file.name.split('.').pop() || 'jpg';
+  const fileRef = ref(storage, `teachers/${teacherId}/photo.${fileExtension}`);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
+}
+
+/**
+ * Deletes a teacher photo from Firebase Storage if it exists
+ */
+export async function deleteTeacherPhoto(teacherId: string, photoUrl: string): Promise<void> {
+  try {
+    if (!photoUrl || photoUrl.includes('placeholder') || !photoUrl.includes('firebasestorage')) return;
+    const fileRef = ref(storage, photoUrl);
+    await deleteObject(fileRef);
+  } catch (error) {
+    console.error("Failed to delete teacher photo:", error);
   }
 }

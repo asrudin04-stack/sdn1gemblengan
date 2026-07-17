@@ -11,10 +11,11 @@ import {
   Upload,
   Download,
   AlertCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Camera
 } from 'lucide-react';
 import { Teacher } from '../types';
-import { addTeacher, updateTeacher, deleteTeacher, saveBulkTeachers } from '../dbService';
+import { addTeacher, updateTeacher, deleteTeacher, saveBulkTeachers, uploadTeacherPhoto, deleteTeacherPhoto } from '../dbService';
 
 interface Props {
   teachers: Teacher[];
@@ -41,6 +42,9 @@ export default function TeacherManagement({ teachers }: Props) {
   const [formClassLevel, setFormClassLevel] = useState<number>(0); // 0 = not wali kelas
   const [formStatus, setFormStatus] = useState<'PNS' | 'PPPK' | 'Honorer'>('PNS');
   const [formPhone, setFormPhone] = useState('');
+  const [formPhotoUrl, setFormPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string>('');
 
   const [loading, setLoading] = useState(false);
 
@@ -66,6 +70,9 @@ export default function TeacherManagement({ teachers }: Props) {
       setFormClassLevel(teacher.classLevel || 0);
       setFormStatus(teacher.status);
       setFormPhone(teacher.phone || '');
+      setFormPhotoUrl(teacher.photoUrl || '');
+      setPhotoPreview(teacher.photoUrl || '');
+      setPhotoFile(null);
     } else {
       setEditingTeacher(null);
       setFormName('');
@@ -75,6 +82,9 @@ export default function TeacherManagement({ teachers }: Props) {
       setFormClassLevel(0);
       setFormStatus('PNS');
       setFormPhone('');
+      setFormPhotoUrl('');
+      setPhotoPreview('');
+      setPhotoFile(null);
     }
     setIsModalOpen(true);
   };
@@ -89,6 +99,8 @@ export default function TeacherManagement({ teachers }: Props) {
 
     setLoading(true);
     try {
+      let finalPhotoUrl = formPhotoUrl;
+
       const teacherData: Teacher = {
         name: formName,
         nip: formNip,
@@ -96,13 +108,22 @@ export default function TeacherManagement({ teachers }: Props) {
         subject: formSubject || 'Guru Kelas',
         classLevel: Number(formClassLevel),
         status: formStatus,
-        phone: formPhone
+        phone: formPhone,
+        photoUrl: finalPhotoUrl
       };
 
       if (editingTeacher && editingTeacher.id) {
+        if (photoFile) {
+          finalPhotoUrl = await uploadTeacherPhoto(editingTeacher.id, photoFile);
+          teacherData.photoUrl = finalPhotoUrl;
+        }
         await updateTeacher(editingTeacher.id, teacherData);
       } else {
-        await addTeacher(teacherData);
+        const docRef = await addTeacher(teacherData);
+        if (photoFile && docRef.id) {
+          finalPhotoUrl = await uploadTeacherPhoto(docRef.id, photoFile);
+          await updateTeacher(docRef.id, { photoUrl: finalPhotoUrl });
+        }
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -116,8 +137,12 @@ export default function TeacherManagement({ teachers }: Props) {
   // Delete Handler
   const handleDelete = async (id: string | undefined, name: string) => {
     if (!id) return;
+    const teacherToDelete = teachers.find(t => t.id === id);
     if (confirm(`Apakah Anda yakin ingin menghapus data guru ${name}?`)) {
       try {
+        if (teacherToDelete?.photoUrl) {
+          await deleteTeacherPhoto(id, teacherToDelete.photoUrl);
+        }
         await deleteTeacher(id);
       } catch (err) {
         console.error(err);
@@ -308,9 +333,18 @@ export default function TeacherManagement({ teachers }: Props) {
                   <tr key={t.id} className="hover:bg-gray-50/70 dark:hover:bg-slate-800/20 transition-colors group">
                     <td className="py-4 px-6">
                       <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-extrabold text-sm font-display">
-                          {t.name.substring(0, 2).toUpperCase()}
-                        </div>
+                        {t.photoUrl ? (
+                          <img 
+                            src={t.photoUrl} 
+                            alt={t.name}
+                            referrerPolicy="no-referrer"
+                            className="w-9 h-9 rounded-full object-cover border border-gray-100 dark:border-slate-800"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-extrabold text-sm font-display">
+                            {t.name.substring(0, 2).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <p className="font-bold text-gray-900 dark:text-white">{t.name}</p>
                           <p className="text-xs text-gray-400 flex items-center space-x-1 mt-0.5">
@@ -395,7 +429,58 @@ export default function TeacherManagement({ teachers }: Props) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Photo Upload */}
+              <div className="flex flex-col items-center justify-center space-y-2 pb-2">
+                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider text-center">
+                  Foto Profil Guru
+                </label>
+                <div className="relative group">
+                  <div className="w-24 h-24 rounded-full border-2 border-dashed border-gray-350 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 flex flex-col items-center justify-center overflow-hidden relative shadow-xs">
+                    {photoPreview ? (
+                      <img 
+                        src={photoPreview} 
+                        alt="Pratinjau" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="text-center p-2 flex flex-col items-center">
+                        <Camera className="w-6 h-6 text-gray-400" />
+                        <span className="text-[10px] text-gray-400 font-semibold mt-1">Pilih Foto</span>
+                      </div>
+                    )}
+                    <input 
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setPhotoFile(file);
+                          setPhotoPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                    />
+                  </div>
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoFile(null);
+                        setPhotoPreview('');
+                        setFormPhotoUrl('');
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition shadow-md"
+                      title="Hapus foto"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Format JPG, PNG (Maks. 2MB)</p>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
                   Nama Lengkap (beserta Gelar) *

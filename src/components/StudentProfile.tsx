@@ -126,9 +126,18 @@ export default function StudentProfile({ student, attendance, examScores, onBack
         {/* Profile Card & Bio */}
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
           <div className="flex flex-col items-center text-center space-y-3 pb-6 border-b border-gray-50">
-            <div className="w-20 h-20 rounded-full bg-indigo-100 text-indigo-700 font-black text-2xl flex items-center justify-center">
-              {student.name.substring(0, 2).toUpperCase()}
-            </div>
+            {student.photoUrl ? (
+              <img 
+                src={student.photoUrl} 
+                alt={student.name}
+                referrerPolicy="no-referrer"
+                className="w-20 h-20 rounded-full object-cover border-2 border-indigo-50 shadow-sm"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-indigo-100 text-indigo-700 font-black text-2xl flex items-center justify-center">
+                {student.name.substring(0, 2).toUpperCase()}
+              </div>
+            )}
             <div>
               <h2 className="text-xl font-bold text-gray-900">{student.name}</h2>
               <p className="text-sm font-semibold text-indigo-600">Siswa Kelas {student.classLevel}</p>

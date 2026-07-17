@@ -1,11 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with the database ID specified in the config, if present.
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+
+// Initialize and export Firebase Storage
+export const storage = getStorage(app);
 
 // Validate connection as instructed in the firebase integration skill guidelines
 async function testConnection() {
