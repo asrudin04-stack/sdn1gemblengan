@@ -11,9 +11,11 @@ import {
   Check,
   AlertCircle,
   Printer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Plus,
+  Minus
 } from 'lucide-react';
-import { Student, Attendance } from '../types';
+import { Student, Attendance, MonthOption } from '../types';
 import { saveBulkAttendance } from '../dbService';
 
 interface Props {
@@ -21,15 +23,21 @@ interface Props {
   attendance: Attendance[];
 }
 
+const SEMESTER_MONTHS = {
+  Ganjil: ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'] as MonthOption[],
+  Genap: ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'] as MonthOption[],
+};
+
 export default function AttendanceManagement({ students, attendance }: Props) {
   const [selectedClass, setSelectedClass] = useState<number>(4);
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    // Current date in YYYY-MM-DD
-    const today = new Date();
-    const offset = today.getTimezoneOffset();
-    const localDate = new Date(today.getTime() - (offset * 60 * 1000));
-    return localDate.toISOString().split('T')[0];
-  });
+  const [selectedSemester, setSelectedSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
+  const [selectedMonth, setSelectedMonth] = useState<MonthOption>('Juli');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2026/2027');
+
+  // Sync selectedMonth when semester changes
+  useEffect(() => {
+    setSelectedMonth(selectedSemester === 'Ganjil' ? 'Juli' : 'Januari');
+  }, [selectedSemester]);
 
   // Filtered active students in the selected class
   const classStudents = useMemo(() => {
@@ -38,29 +46,36 @@ export default function AttendanceManagement({ students, attendance }: Props) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedClass]);
 
-  // Attendance states for form
-  const [attendanceStates, setAttendanceStates] = useState<Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }>>({});
+  // Attendance states for form: Record of studentId -> { sakit, izin, alpa, notes }
+  const [attendanceStates, setAttendanceStates] = useState<Record<string, { sakit: number; izin: number; alpa: number; notes: string }>>({});
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Loaded existing attendance records for the selected class and date
+  // Loaded existing attendance records for the selected class, semester, month, and academic year
   const existingAttendanceMap = useMemo(() => {
-    const records = attendance.filter(a => a.classLevel === selectedClass && a.date === selectedDate);
+    const records = attendance.filter(
+      a => a.classLevel === selectedClass && 
+           a.semester === selectedSemester && 
+           a.month === selectedMonth &&
+           a.academicYear === selectedAcademicYear
+    );
     const map: Record<string, Attendance> = {};
     records.forEach(r => {
       map[r.studentId] = r;
     });
     return map;
-  }, [attendance, selectedClass, selectedDate]);
+  }, [attendance, selectedClass, selectedSemester, selectedMonth, selectedAcademicYear]);
 
-  // Synchronize attendance state when class, date, or database updates
+  // Synchronize attendance state when class, semester, academic year, or database updates
   useEffect(() => {
     const newStates: typeof attendanceStates = {};
     classStudents.forEach(student => {
       if (student.id) {
         const existing = existingAttendanceMap[student.id];
         newStates[student.id] = {
-          status: existing ? existing.status : 'Hadir', // default to 'Hadir' if no log
+          sakit: existing ? (existing.sakit ?? 0) : 0,
+          izin: existing ? (existing.izin ?? 0) : 0,
+          alpa: existing ? (existing.alpa ?? 0) : 0,
           notes: existing?.notes || ''
         };
       }
@@ -68,26 +83,47 @@ export default function AttendanceManagement({ students, attendance }: Props) {
     setAttendanceStates(newStates);
   }, [classStudents, existingAttendanceMap]);
 
-  // Set all class students to 'Hadir' as a rapid entry feature
-  const handleMarkAllHadir = () => {
+  // Reset all counts for students in this class to 0 (perfect attendance)
+  const handleResetAllToZero = () => {
     const updated = { ...attendanceStates };
     classStudents.forEach(student => {
       if (student.id && updated[student.id]) {
-        updated[student.id].status = 'Hadir';
+        updated[student.id].sakit = 0;
+        updated[student.id].izin = 0;
+        updated[student.id].alpa = 0;
       }
     });
     setAttendanceStates(updated);
   };
 
-  // Set individual student attendance status
-  const handleStatusChange = (studentId: string, status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa') => {
-    setAttendanceStates(prev => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        status
-      }
-    }));
+  // Adjust count by step
+  const handleCountChange = (studentId: string, field: 'sakit' | 'izin' | 'alpa', step: number) => {
+    setAttendanceStates(prev => {
+      const current = prev[studentId] || { sakit: 0, izin: 0, alpa: 0, notes: '' };
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          [field]: Math.max(0, current[field] + step)
+        }
+      };
+    });
+  };
+
+  // Direct input change
+  const handleNumberInputChange = (studentId: string, field: 'sakit' | 'izin' | 'alpa', value: string) => {
+    const num = value === '' ? 0 : parseInt(value, 10);
+    const sanitizedVal = isNaN(num) ? 0 : Math.max(0, num);
+    setAttendanceStates(prev => {
+      const current = prev[studentId] || { sakit: 0, izin: 0, alpa: 0, notes: '' };
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          [field]: sanitizedVal
+        }
+      };
+    });
   };
 
   // Set individual notes
@@ -114,15 +150,19 @@ export default function AttendanceManagement({ students, attendance }: Props) {
         const studentState = attendanceStates[student.id!];
         return {
           studentId: student.id!,
-          date: selectedDate,
           classLevel: selectedClass,
-          status: studentState?.status || 'Hadir',
+          semester: selectedSemester,
+          month: selectedMonth,
+          academicYear: selectedAcademicYear,
+          sakit: studentState?.sakit || 0,
+          izin: studentState?.izin || 0,
+          alpa: studentState?.alpa || 0,
           notes: studentState?.notes || ''
         };
       });
 
       await saveBulkAttendance(recordsToSave);
-      setSuccessMsg('Absensi berhasil disimpan ke cloud database!');
+      setSuccessMsg(`Absensi bulan ${selectedMonth} berhasil disimpan ke cloud database!`);
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {
       console.error(err);
@@ -132,25 +172,28 @@ export default function AttendanceManagement({ students, attendance }: Props) {
     }
   };
 
-  // Today's attendance summary stats for the current class
+  // Attendance summary stats for the current class in this month
   const classStats = useMemo(() => {
-    let hadir = 0, sakit = 0, izin = 0, alpa = 0;
+    let sakit = 0, izin = 0, alpa = 0;
     classStudents.forEach(s => {
       if (s.id) {
         const st = attendanceStates[s.id];
         if (st) {
-          if (st.status === 'Hadir') hadir++;
-          else if (st.status === 'Sakit') sakit++;
-          else if (st.status === 'Izin') izin++;
-          else if (st.status === 'Alpa') alpa++;
+          sakit += st.sakit || 0;
+          izin += st.izin || 0;
+          alpa += st.alpa || 0;
         }
       }
     });
+
+    const totalStudents = classStudents.length;
+    const totalPossibleDays = totalStudents * 20; // standard 20 active school days per month for rate calculation
+    const totalAbsences = sakit + izin + alpa;
+    const rate = totalPossibleDays > 0 
+      ? Math.max(0, Math.round(((totalPossibleDays - totalAbsences) / totalPossibleDays) * 100))
+      : 100;
     
-    const total = classStudents.length;
-    const rate = total > 0 ? Math.round((hadir / total) * 100) : 0;
-    
-    return { hadir, sakit, izin, alpa, total, rate };
+    return { sakit, izin, alpa, total: totalStudents, rate };
   }, [classStudents, attendanceStates]);
 
   const handlePrintAttendance = () => {
@@ -163,15 +206,19 @@ export default function AttendanceManagement({ students, attendance }: Props) {
       return;
     }
 
-    const headers = ['Nama Siswa', 'NISN', 'Kelas', 'Tanggal', 'Status Kehadiran', 'Keterangan'];
+    const headers = ['Nama Siswa', 'NISN', 'Kelas', 'Semester', 'Bulan', 'Tahun Ajaran', 'Sakit (Hari)', 'Izin (Hari)', 'Alpa (Hari)', 'Keterangan'];
     const rows = classStudents.map((student) => {
-      const state = attendanceStates[student.id!] || { status: 'Hadir', notes: '' };
+      const state = attendanceStates[student.id!] || { sakit: 0, izin: 0, alpa: 0, notes: '' };
       return [
         student.name,
         student.nisn,
         `Kelas ${selectedClass}`,
-        selectedDate,
-        state.status,
+        selectedSemester,
+        selectedMonth,
+        selectedAcademicYear,
+        state.sakit,
+        state.izin,
+        state.alpa,
         state.notes || '-'
       ];
     });
@@ -181,7 +228,7 @@ export default function AttendanceManagement({ students, attendance }: Props) {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Presensi_Kelas_${selectedClass}_Tgl_${selectedDate}.csv`);
+    link.setAttribute("download", `Presensi_Siswa_Kelas_${selectedClass}_Bulan_${selectedMonth}_Sem_${selectedSemester}_TA_${selectedAcademicYear.replace('/', '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -192,8 +239,8 @@ export default function AttendanceManagement({ students, attendance }: Props) {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between pb-2 border-b border-gray-100 dark:border-slate-800 no-print">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight font-display">Presensi Kehadiran Siswa</h1>
-          <p className="text-sm text-gray-500 dark:text-slate-400 font-sans">Kelola dan rekap daftar kehadiran harian siswa secara cepat dan terintegrasi.</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight font-display">Rekap Presensi Kehadiran per Bulan</h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 font-sans">Kelola dan rekap bulanan absensi siswa (Sakit, Izin, Alpa) untuk keaktifan belajar siswa.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-4 md:mt-0">
           <button
@@ -213,11 +260,11 @@ export default function AttendanceManagement({ students, attendance }: Props) {
             <span>Cetak PDF</span>
           </button>
           <button
-            onClick={handleMarkAllHadir}
+            onClick={handleResetAllToZero}
             className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-xl border border-indigo-200 dark:border-indigo-900/40 transition"
-            id="mark-all-hadir-btn"
+            id="reset-all-btn"
           >
-            Set Semua Hadir
+            Set Semua Hadir Penuh (0)
           </button>
           <button
             onClick={handleSaveAttendance}
@@ -233,15 +280,15 @@ export default function AttendanceManagement({ students, attendance }: Props) {
 
       {/* PRINT-ONLY HEADER */}
       <div className="hidden print-only text-center space-y-2 mb-6">
-        <h1 className="text-xl font-extrabold uppercase">Laporan Presensi Kehadiran Siswa</h1>
+        <h1 className="text-xl font-extrabold uppercase">Laporan Presensi Kehadiran Siswa Bulanan</h1>
         <h2 className="text-md font-bold">KELAS {selectedClass} - SDN 1</h2>
-        <p className="text-xs text-gray-500">Tanggal: {selectedDate}</p>
+        <p className="text-xs text-gray-500">Bulan: {selectedMonth} | Semester: {selectedSemester} | Tahun Ajaran: {selectedAcademicYear}</p>
         <div className="text-xs font-bold text-gray-700 flex justify-center space-x-4 pt-2">
-          <span>Hadir: {classStats.hadir}</span>
-          <span>Sakit: {classStats.sakit}</span>
-          <span>Izin: {classStats.izin}</span>
-          <span>Alpa: {classStats.alpa}</span>
-          <span>Persentase: {classStats.rate}%</span>
+          <span>Jumlah Siswa: {classStats.total}</span>
+          <span>Sakit: {classStats.sakit} hari</span>
+          <span>Izin: {classStats.izin} hari</span>
+          <span>Alpa: {classStats.alpa} hari</span>
+          <span>Rata-rata Kehadiran Kelas: {classStats.rate}%</span>
         </div>
         <hr className="border-gray-200 mt-4" />
       </div>
@@ -249,7 +296,7 @@ export default function AttendanceManagement({ students, attendance }: Props) {
       {/* Selectors Panel */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 no-print">
         {/* Class Level Selector */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-center">
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs flex flex-col justify-center">
           <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
             Tingkatan Kelas
           </label>
@@ -261,7 +308,7 @@ export default function AttendanceManagement({ students, attendance }: Props) {
                 className={`py-2 text-sm font-bold rounded-xl border transition ${
                   selectedClass === level
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    : 'bg-gray-50 dark:bg-slate-800 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:bg-gray-100'
                 }`}
                 id={`select-class-${level}`}
               >
@@ -271,49 +318,83 @@ export default function AttendanceManagement({ students, attendance }: Props) {
           </div>
         </div>
 
-        {/* Date Selector */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-center">
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
-            Tanggal Presensi
-          </label>
-          <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-              <Calendar className="w-4 h-4" />
-            </span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 hover:bg-gray-100/50 focus:bg-white text-sm text-gray-900 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-semibold"
-              id="attendance-date-picker"
-            />
+        {/* Semester and Academic Year Selector */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+              Semester
+            </label>
+            <select
+              value={selectedSemester}
+              onChange={(e) => setSelectedSemester(e.target.value as 'Ganjil' | 'Genap')}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100/50 text-sm text-gray-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-semibold"
+              id="semester-select"
+            >
+              <option value="Ganjil">Semester 1 (Ganjil)</option>
+              <option value="Genap">Semester 2 (Genap)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+              Tahun Ajaran
+            </label>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100/50 text-sm text-gray-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-semibold"
+              id="academic-year-select"
+            >
+              <option value="2024/2025">2024/2025</option>
+              <option value="2025/2026">2025/2026</option>
+              <option value="2026/2027">2026/2027</option>
+              <option value="2027/2028">2027/2028</option>
+            </select>
           </div>
         </div>
 
         {/* Class Stats Summary */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs flex flex-col justify-between">
           <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Rekap Kelas {selectedClass}</span>
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Kehadiran Kelas {selectedClass}</span>
             <span className="text-xs font-bold text-emerald-600">{classStats.rate}% Hadir</span>
           </div>
-          <div className="grid grid-cols-4 gap-2 pt-2">
-            <div className="bg-emerald-50 text-emerald-700 p-2 rounded-xl text-center">
-              <div className="text-lg font-bold">{classStats.hadir}</div>
-              <div className="text-xxs uppercase font-medium">Hadir</div>
-            </div>
-            <div className="bg-amber-50 text-amber-700 p-2 rounded-xl text-center">
+          <div className="grid grid-cols-3 gap-2 pt-2">
+            <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 p-2 rounded-xl text-center">
               <div className="text-lg font-bold">{classStats.sakit}</div>
               <div className="text-xxs uppercase font-medium">Sakit</div>
             </div>
-            <div className="bg-blue-50 text-blue-700 p-2 rounded-xl text-center">
+            <div className="bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400 p-2 rounded-xl text-center">
               <div className="text-lg font-bold">{classStats.izin}</div>
               <div className="text-xxs uppercase font-medium">Izin</div>
             </div>
-            <div className="bg-red-50 text-red-700 p-2 rounded-xl text-center">
+            <div className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 p-2 rounded-xl text-center">
               <div className="text-lg font-bold">{classStats.alpa}</div>
               <div className="text-xxs uppercase font-medium">Alpa</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Month Selector Bar */}
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs no-print">
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+          Pilih Bulan ({selectedSemester === 'Ganjil' ? 'Semester Ganjil' : 'Semester Genap'})
+        </label>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {SEMESTER_MONTHS[selectedSemester].map(m => (
+            <button
+              key={m}
+              onClick={() => setSelectedMonth(m)}
+              className={`py-2 px-3 text-xs font-bold rounded-xl border transition flex flex-col items-center justify-center space-y-1 ${
+                selectedMonth === m
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                  : 'bg-gray-50 dark:bg-slate-800 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700'
+              }`}
+              id={`select-month-${m}`}
+            >
+              <span>{m}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -326,20 +407,23 @@ export default function AttendanceManagement({ students, attendance }: Props) {
       )}
 
       {/* Attendance Form Grid/Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs overflow-hidden no-print">
-        <div className="p-4 bg-gray-50 dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800/60 flex justify-between items-center">
-          <h3 className="text-sm font-bold text-gray-700 dark:text-slate-300">Daftar Absen Kelas {selectedClass} ({classStudents.length} siswa)</h3>
-          <span className="text-xs text-gray-400 dark:text-slate-500">Pilih status kehadiran & berikan keterangan bila sakit/izin</span>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-xs overflow-hidden no-print">
+        <div className="p-4 bg-gray-50 dark:bg-slate-900/60 border-b border-gray-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-gray-700 dark:text-slate-300">Daftar Rekap Absensi Kelas {selectedClass} ({classStudents.length} siswa)</h3>
+            <p className="text-xs text-gray-400">Bulan {selectedMonth} | Semester {selectedSemester} | Tahun Ajaran {selectedAcademicYear}</p>
+          </div>
+          <span className="text-xs text-gray-400 dark:text-slate-500">Input akumulasi jumlah hari ketidakhadiran selama bulan {selectedMonth} (Maks. 20 hari aktif)</span>
         </div>
 
         {classStudents.length > 0 ? (
           <div className="divide-y divide-gray-100 dark:divide-slate-800/40">
             {classStudents.map((student, index) => {
-              const state = attendanceStates[student.id!] || { status: 'Hadir', notes: '' };
+              const state = attendanceStates[student.id!] || { sakit: 0, izin: 0, alpa: 0, notes: '' };
               return (
                 <div 
                   key={student.id} 
-                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/40 dark:hover:bg-slate-900/10 transition-colors"
+                  className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-gray-50/40 dark:hover:bg-slate-800/10 transition-colors"
                 >
                   {/* Student Name */}
                   <div className="flex items-center space-x-3 min-w-[200px]">
@@ -350,41 +434,102 @@ export default function AttendanceManagement({ students, attendance }: Props) {
                     </div>
                   </div>
 
-                  {/* Status Options Button Group */}
-                  <div className="flex items-center space-x-1" id={`status-group-${student.id}`}>
-                    {(['Hadir', 'Sakit', 'Izin', 'Alpa'] as const).map(status => {
-                      const isActive = state.status === status;
-                      let colorClass = '';
-                      if (isActive) {
-                        if (status === 'Hadir') colorClass = 'bg-emerald-600 text-white border-emerald-600 shadow-xs';
-                        else if (status === 'Sakit') colorClass = 'bg-amber-500 text-white border-amber-500 shadow-xs';
-                        else if (status === 'Izin') colorClass = 'bg-blue-500 text-white border-blue-500 shadow-xs';
-                        else if (status === 'Alpa') colorClass = 'bg-red-500 text-white border-red-500 shadow-xs';
-                      } else {
-                        colorClass = 'bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700';
-                      }
-
-                      return (
+                  {/* Absensi Counter Inputs */}
+                  <div className="grid grid-cols-3 gap-3 md:gap-6">
+                    {/* Sakit */}
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-xxs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Sakit (Hari)</span>
+                      <div className="flex items-center space-x-1 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-1 py-0.5">
                         <button
-                          key={status}
                           type="button"
-                          onClick={() => handleStatusChange(student.id!, status)}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${colorClass}`}
+                          onClick={() => handleCountChange(student.id!, 'sakit', -1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
                         >
-                          {status}
+                          <Minus className="w-3.5 h-3.5" />
                         </button>
-                      );
-                    })}
+                        <input
+                          type="text"
+                          pattern="[0-9]*"
+                          value={state.sakit}
+                          onChange={(e) => handleNumberInputChange(student.id!, 'sakit', e.target.value)}
+                          className="w-8 text-center text-xs font-extrabold bg-transparent border-0 p-0 focus:ring-0 text-gray-950 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCountChange(student.id!, 'sakit', 1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Izin */}
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-xxs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Izin (Hari)</span>
+                      <div className="flex items-center space-x-1 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-1 py-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleCountChange(student.id!, 'izin', -1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="text"
+                          pattern="[0-9]*"
+                          value={state.izin}
+                          onChange={(e) => handleNumberInputChange(student.id!, 'izin', e.target.value)}
+                          className="w-8 text-center text-xs font-extrabold bg-transparent border-0 p-0 focus:ring-0 text-gray-950 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCountChange(student.id!, 'izin', 1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Alpa */}
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-xxs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">Alpa (Hari)</span>
+                      <div className="flex items-center space-x-1 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-1 py-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleCountChange(student.id!, 'alpa', -1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="text"
+                          pattern="[0-9]*"
+                          value={state.alpa}
+                          onChange={(e) => handleNumberInputChange(student.id!, 'alpa', e.target.value)}
+                          className="w-8 text-center text-xs font-extrabold bg-transparent border-0 p-0 focus:ring-0 text-gray-950 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCountChange(student.id!, 'alpa', 1)}
+                          className="w-7 h-7 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Keterangan / Notes input */}
-                  <div className="flex-1 max-w-xs">
+                  <div className="flex-1 lg:max-w-xs mt-2 lg:mt-0">
+                    <span className="text-xxs font-bold text-gray-400 uppercase tracking-wide block mb-1">Catatan Tambahan</span>
                     <input
                       type="text"
-                      placeholder="Keterangan tambahan..."
+                      placeholder="Contoh: Sakit tipus, Izin pulang kampung..."
                       value={state.notes}
                       onChange={(e) => handleNotesChange(student.id!, e.target.value)}
-                      className="w-full px-3 py-1.5 bg-gray-50 dark:bg-slate-900 hover:bg-gray-100/50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-950 text-xs text-gray-800 dark:text-slate-200 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100/50 dark:hover:bg-slate-700 focus:bg-white dark:focus:bg-slate-950 text-xs text-gray-800 dark:text-slate-200 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
@@ -408,19 +553,23 @@ export default function AttendanceManagement({ students, attendance }: Props) {
               <th className="py-2 px-3 border border-gray-300 w-12 text-center">No</th>
               <th className="py-2 px-3 border border-gray-300">Nama Siswa</th>
               <th className="py-2 px-3 border border-gray-300">NISN</th>
-              <th className="py-2 px-3 border border-gray-300 text-center w-32">Status Kehadiran</th>
+              <th className="py-2 px-3 border border-gray-300 text-center w-20">Sakit</th>
+              <th className="py-2 px-3 border border-gray-300 text-center w-20">Izin</th>
+              <th className="py-2 px-3 border border-gray-300 text-center w-20">Alpa</th>
               <th className="py-2 px-3 border border-gray-300">Keterangan</th>
             </tr>
           </thead>
           <tbody className="text-sm">
             {classStudents.map((student, index) => {
-              const state = attendanceStates[student.id!] || { status: 'Hadir', notes: '' };
+              const state = attendanceStates[student.id!] || { sakit: 0, izin: 0, alpa: 0, notes: '' };
               return (
                 <tr key={student.id} className="border-b border-gray-300">
                   <td className="py-2 px-3 border border-gray-300 text-center">{index + 1}</td>
                   <td className="py-2 px-3 border border-gray-300 font-bold">{student.name}</td>
                   <td className="py-2 px-3 border border-gray-300 font-mono text-xs">{student.nisn}</td>
-                  <td className="py-2 px-3 border border-gray-300 text-center font-bold">{state.status}</td>
+                  <td className="py-2 px-3 border border-gray-300 text-center">{state.sakit} hari</td>
+                  <td className="py-2 px-3 border border-gray-300 text-center">{state.izin} hari</td>
+                  <td className="py-2 px-3 border border-gray-300 text-center">{state.alpa} hari</td>
                   <td className="py-2 px-3 border border-gray-300 italic">{state.notes || '-'}</td>
                 </tr>
               );

@@ -120,16 +120,18 @@ export function subscribeAttendance(callback: (attendance: Attendance[]) => void
 }
 
 export async function saveBulkAttendance(records: Omit<Attendance, 'id'>[]) {
-  // To avoid writing records multiple times for the same student + date,
+  // To avoid writing records multiple times for the same student, semester, and academic year,
   // we first query if there are existing records and overwrite/update or replace them.
   const batch = writeBatch(db);
   
   for (const record of records) {
-    // Check if an attendance record for this student and date already exists
+    // Check if an attendance record for this student, semester, academic year, and month already exists
     const q = query(
       attendanceCol, 
       where('studentId', '==', record.studentId),
-      where('date', '==', record.date)
+      where('semester', '==', record.semester),
+      where('month', '==', record.month),
+      where('academicYear', '==', record.academicYear)
     );
     const snap = await getDocs(q);
     

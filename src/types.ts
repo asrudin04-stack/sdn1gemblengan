@@ -10,12 +10,20 @@ export interface Student {
   parentPhone: string;
 }
 
+export type MonthOption = 
+  | 'Juli' | 'Agustus' | 'September' | 'Oktober' | 'November' | 'Desember'
+  | 'Januari' | 'Februari' | 'Maret' | 'April' | 'Mei' | 'Juni';
+
 export interface Attendance {
   id?: string;
   studentId: string;
-  date: string; // YYYY-MM-DD
   classLevel: number;
-  status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa';
+  semester: 'Ganjil' | 'Genap';
+  month: MonthOption;
+  academicYear: string; // e.g., '2025/2026'
+  sakit: number;
+  izin: number;
+  alpa: number;
   notes?: string;
 }
 

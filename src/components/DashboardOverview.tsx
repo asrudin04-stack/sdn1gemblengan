@@ -54,20 +54,31 @@ export default function DashboardOverview({ students, attendance, examScores, on
       };
     });
 
-    // Attendance rate
-    // Calculate total attendance rate
-    const totalAttendanceRecords = attendance.length;
-    const presentRecords = attendance.filter(a => a.status === 'Hadir').length;
-    const attendanceRate = totalAttendanceRecords > 0 
-      ? Math.round((presentRecords / totalAttendanceRecords) * 100) 
-      : 0;
+    // Attendance rate (Monthly based)
+    // For each monthly record, we calculate individual attendance rate and find the overall average.
+    let totalPossibleDays = 0;
+    let totalAbsentDays = 0;
+    attendance.forEach(a => {
+      totalPossibleDays += 20; // Assume 20 days per monthly record
+      totalAbsentDays += (a.sakit ?? 0) + (a.izin ?? 0) + (a.alpa ?? 0);
+    });
+    const attendanceRate = totalPossibleDays > 0 
+      ? Math.max(0, Math.round(((totalPossibleDays - totalAbsentDays) / totalPossibleDays) * 100))
+      : 100;
 
     // Class level attendance rates
     const classAttendanceRates = Array.from({ length: 6 }, (_, i) => {
       const level = i + 1;
-      const classAtt = attendance.filter(a => a.classLevel === level);
-      const classPresent = classAtt.filter(a => a.status === 'Hadir').length;
-      const rate = classAtt.length > 0 ? Math.round((classPresent / classAtt.length) * 100) : 100; // default 100 if no data
+      const classAtts = attendance.filter(a => a.classLevel === level);
+      let classPossible = 0;
+      let classAbsent = 0;
+      classAtts.forEach(a => {
+        classPossible += 20; // Assume 20 days per monthly record
+        classAbsent += (a.sakit ?? 0) + (a.izin ?? 0) + (a.alpa ?? 0);
+      });
+      const rate = classPossible > 0
+        ? Math.max(0, Math.round(((classPossible - classAbsent) / classPossible) * 100))
+        : 100; // default 100 if no data
       return {
         classLabel: `Kelas ${level}`,
         rate

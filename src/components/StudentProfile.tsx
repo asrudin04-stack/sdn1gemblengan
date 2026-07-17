@@ -23,17 +23,29 @@ interface Props {
 }
 
 export default function StudentProfile({ student, attendance, examScores, onBack }: Props) {
-  // 1. Calculate Student Attendance Rates
+  // 1. Calculate Student Attendance Rates (Monthly based)
   const studentAttendance = useMemo(() => {
     const logs = attendance.filter(a => a.studentId === student.id);
-    const total = logs.length;
-    const hadir = logs.filter(l => l.status === 'Hadir').length;
-    const sakit = logs.filter(l => l.status === 'Sakit').length;
-    const izin = logs.filter(l => l.status === 'Izin').length;
-    const alpa = logs.filter(l => l.status === 'Alpa').length;
-    const rate = total > 0 ? Math.round((hadir / total) * 100) : 100; // default 100% if no data
+    let sakit = 0;
+    let izin = 0;
+    let alpa = 0;
+    logs.forEach(l => {
+      sakit += l.sakit ?? 0;
+      izin += l.izin ?? 0;
+      alpa += l.alpa ?? 0;
+    });
 
-    return { total, hadir, sakit, izin, alpa, rate, logs };
+    const totalRecords = logs.length;
+    const totalPossibleDays = totalRecords * 20; // Assume 20 school days per monthly record
+    const totalAbsent = sakit + izin + alpa;
+    const rate = totalPossibleDays > 0 
+      ? Math.max(0, Math.round(((totalPossibleDays - totalAbsent) / totalPossibleDays) * 100))
+      : 100; // default 100% if no data
+
+    // Estimated present days
+    const hadir = totalPossibleDays > 0 ? (totalPossibleDays - totalAbsent) : 20;
+
+    return { total: totalRecords, hadir, sakit, izin, alpa, rate, logs };
   }, [attendance, student.id]);
 
   // 2. Calculate Subject Wise Report Card (Rapor Akademik)
@@ -186,7 +198,7 @@ export default function StudentProfile({ student, attendance, examScores, onBack
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-100/50 text-center">
               <p className="text-2xl font-bold text-emerald-700">{studentAttendance.hadir}</p>
-              <p className="text-xs text-emerald-600 uppercase font-semibold tracking-wider">Hadir</p>
+              <p className="text-xs text-emerald-600 uppercase font-semibold tracking-wider">Hadir (Hari/Est)</p>
             </div>
             <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-100/50 text-center">
               <p className="text-2xl font-bold text-amber-600">{studentAttendance.sakit}</p>
@@ -204,24 +216,32 @@ export default function StudentProfile({ student, attendance, examScores, onBack
 
           {/* Quick list of recent absences */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Catatan Ketidakhadiran (Sakit / Izin / Alpa)</h4>
-            <div className="max-h-36 overflow-y-auto space-y-2 pr-1 text-sm">
-              {studentAttendance.logs.filter(l => l.status !== 'Hadir').length > 0 ? (
-                studentAttendance.logs.filter(l => l.status !== 'Hadir').map((log, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
-                    <div className="flex items-center space-x-2">
-                      <span className={`w-2 h-2 rounded-full ${
-                        log.status === 'Sakit' ? 'bg-amber-500' :
-                        log.status === 'Izin' ? 'bg-blue-500' : 'bg-red-500'
-                      }`}></span>
-                      <span className="font-bold text-gray-700">{log.status}</span>
-                      {log.notes && <span className="text-gray-400">({log.notes})</span>}
+            <h4 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Rekap Absensi per Bulan</h4>
+            <div className="max-h-44 overflow-y-auto space-y-2 pr-1 text-sm">
+              {studentAttendance.logs.length > 0 ? (
+                studentAttendance.logs.map((log, idx) => (
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl gap-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-extrabold text-gray-800 dark:text-slate-200">
+                          Bulan {log.month} (Semester {log.semester}, TA {log.academicYear})
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 text-xs text-gray-500 font-semibold">
+                        <span className="text-amber-600">Sakit: {log.sakit} hari</span>
+                        <span className="text-blue-600">Izin: {log.izin} hari</span>
+                        <span className="text-red-600">Alpa: {log.alpa} hari</span>
+                      </div>
                     </div>
-                    <span className="text-xs font-mono text-gray-400">{log.date}</span>
+                    {log.notes ? (
+                      <span className="text-xs italic text-gray-400 max-w-xs truncate font-medium">"{log.notes}"</span>
+                    ) : (
+                      <span className="text-xs text-gray-300 italic">Tidak ada catatan</span>
+                    )}
                   </div>
                 ))
               ) : (
-                <p className="text-xs text-gray-400 italic">Siswa memiliki rekam kehadiran 100% prima.</p>
+                <p className="text-xs text-gray-400 italic">Belum ada rekam kehadiran bulanan untuk siswa ini.</p>
               )}
             </div>
           </div>

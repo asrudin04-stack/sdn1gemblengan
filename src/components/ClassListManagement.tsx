@@ -44,11 +44,16 @@ export default function ClassListManagement({ students, teachers, attendance, ex
         ? Math.round(classScores.reduce((sum, current) => sum + current.score, 0) / classScores.length)
         : 0;
 
-      // Attendance rate
+      // Attendance rate (Semester based)
       const classAttendance = attendance.filter(att => att.classLevel === level);
-      const presentCount = classAttendance.filter(att => att.status === 'Hadir').length;
-      const attendanceRate = classAttendance.length > 0
-        ? Math.round((presentCount / classAttendance.length) * 100)
+      let totalPossible = 0;
+      let totalAbsent = 0;
+      classAttendance.forEach(att => {
+        totalPossible += 100;
+        totalAbsent += (att.sakit ?? 0) + (att.izin ?? 0) + (att.alpa ?? 0);
+      });
+      const attendanceRate = totalPossible > 0
+        ? Math.max(0, Math.round(((totalPossible - totalAbsent) / totalPossible) * 100))
         : 100; // Default to 100% if no logs yet
 
       return {

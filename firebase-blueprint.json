@@ -18,16 +18,20 @@
     },
     "attendance": {
       "title": "Attendance",
-      "description": "Daily attendance record for a student",
+      "description": "Monthly attendance record for a student",
       "type": "object",
       "properties": {
         "studentId": { "type": "string" },
-        "date": { "type": "string", "format": "date" },
         "classLevel": { "type": "number" },
-        "status": { "type": "string", "enum": ["Hadir", "Sakit", "Izin", "Alpa"] },
+        "semester": { "type": "string", "enum": ["Ganjil", "Genap"] },
+        "month": { "type": "string", "enum": ["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"] },
+        "academicYear": { "type": "string", "description": "e.g., 2025/2026" },
+        "sakit": { "type": "number" },
+        "izin": { "type": "number" },
+        "alpa": { "type": "number" },
         "notes": { "type": "string" }
       },
-      "required": ["studentId", "date", "classLevel", "status"]
+      "required": ["studentId", "classLevel", "semester", "month", "academicYear", "sakit", "izin", "alpa"]
     },
     "examScore": {
       "title": "ExamScore",
